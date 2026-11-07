@@ -1,0 +1,30 @@
+@model GradingSystem.Models.LoginViewModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+
+<div class="gs-auth-wrap">
+    <div class="gs-card gs-auth-card">
+        <div class="gs-card-body p-4">
+            <div class="gs-auth-logo" aria-hidden="true">GS</div>
+            <h1 class="gs-title text-center" style="font-size:1.35rem;">Welcome back</h1>
+            <p class="gs-subtitle text-center mb-4">Sign in to the Grading System</p>
+
+            <form asp-action="Login" method="post">
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2" role="alert"></div>
+                <div class="gs-field mb-3">
+                    <label asp-for="Email">Email</label>
+                    <input asp-for="Email" class="form-control" type="email" autocomplete="username"
+                           autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="you@example.com" />
+                    <span asp-validation-for="Email" class="text-danger hint"></span>
+                </div>
+                <div class="gs-field mb-4">
+                    <label asp-for="Password">Password</label>
+                    <input asp-for="Password" class="form-control" type="password" autocomplete="current-password" />
+                    <span asp-validation-for="Password" class="text-danger hint"></span>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Sign in</button>
+            </form>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,8 @@
+﻿@{
+	ViewData["Title"] = "Faculty Dashboard";
+}
+<h2>Faculty Dashboard</h2>
+<p>Signed in as @User.Identity?.Name</p>
+<form asp-controller="Account" asp-action="Logout" method="post">
+	<button class="btn btn-outline-secondary">Sign out</button>
+</form>

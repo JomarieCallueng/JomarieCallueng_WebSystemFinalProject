@@ -1,0 +1,118 @@
+@{
+    ViewData["Title"] = "Student Dashboard";
+}
+
+<div class="gs-header">
+    <h1 class="gs-title">Student Dashboard</h1>
+    <p class="gs-subtitle">Your posted grades for the current records.</p>
+</div>
+
+@* Profile card *@
+<div class="gs-card mb-4">
+    <div class="gs-card-body d-flex align-items-center gap-3">
+        <span class="gs-avatar" id="avatar" style="width:52px;height:52px;font-size:1.1rem;" aria-hidden="true">&middot;</span>
+        <div>
+            <div class="gs-title" id="studentName" style="font-size:1.3rem;">&hellip;</div>
+            <div class="gs-subtitle">Student No. <span id="studentNumber">&hellip;</span></div>
+        </div>
+    </div>
+</div>
+
+@* Summary tiles *@
+<div class="gs-stats mb-4">
+    <div class="gs-stat">
+        <div class="gs-stat-label">Subjects</div>
+        <div class="gs-stat-value" id="statCount">0</div>
+    </div>
+    <div class="gs-stat">
+        <div class="gs-stat-label">Average grade</div>
+        <div class="gs-stat-value" id="statAvg">&ndash;</div>
+    </div>
+</div>
+
+<h2 class="gs-title" style="font-size:1.15rem; margin-bottom:.6rem;">My grades</h2>
+<div class="gs-table-wrap" tabindex="0" role="region" aria-label="My grades">
+    <table class="gs-table">
+        <thead>
+            <tr>
+                <th>Code</th><th>Subject</th><th>Grade</th>
+                <th>Remarks</th><th>Semester</th><th>School Year</th>
+            </tr>
+        </thead>
+        <tbody id="gradeRows">
+            <tr><td class="gs-empty" colspan="6">Loading&hellip;</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="gs-toast-stack" id="toasts" role="status" aria-live="polite"></div>
+
+@section Scripts {
+<script>
+    const API = '/api/student/grades';
+    const rowsEl = document.getElementById('gradeRows');
+    const toasts = document.getElementById('toasts');
+
+    function badgeClass(r) {
+        return ({ 'CMS':'cms','SP':'sp','SAP':'sap','GP':'gp','EP':'ep','BEP/FAILED':'fail' })[r] || 'sap';
+    }
+    function badge(r) { return `<span class="gs-badge ${badgeClass(r)}">${r}</span>`; }
+
+    function toast(text, kind) {
+        const el = document.createElement('div');
+        el.className = 'gs-toast ' + (kind === 'err' ? 'err' : 'ok');
+        el.innerHTML = `<span>${text}</span><button class="gs-toast-close" aria-label="Dismiss">&times;</button>`;
+        el.querySelector('button').onclick = () => el.remove();
+        toasts.appendChild(el);
+        setTimeout(() => el.remove(), 4000);
+    }
+
+    async function errorText(res) {
+        try { const d = await res.json(); if (d.message) return d.message; } catch (e) {}
+        if (res.status === 401) return 'Your session has expired. Please sign in again.';
+        if (res.status === 403) return 'You do not have access to this page.';
+        return 'Could not load your grades (HTTP ' + res.status + ').';
+    }
+
+    // The API identifies the student from the LOGIN account, never from the request.
+    async function loadMyGrades() {
+        try {
+            const res = await fetch(API, { credentials: 'same-origin' });
+            if (!res.ok) {
+                rowsEl.innerHTML = '<tr><td class="gs-empty" colspan="6">&mdash;</td></tr>';
+                toast(await errorText(res), 'err');
+                return;
+            }
+            const data = await res.json();
+            document.getElementById('studentName').textContent = data.studentName;
+            document.getElementById('studentNumber').textContent = data.studentNumber;
+            document.getElementById('avatar').textContent = (data.studentName || '?').trim().charAt(0).toUpperCase();
+
+            const grades = data.grades || [];
+            document.getElementById('statCount').textContent = grades.length;
+            document.getElementById('statAvg').textContent = grades.length
+                ? Math.round(grades.reduce((s, g) => s + g.grade, 0) / grades.length)
+                : '–';
+
+            if (grades.length === 0) {
+                rowsEl.innerHTML = '<tr><td class="gs-empty" colspan="6">You have no grades posted yet.</td></tr>';
+                return;
+            }
+            rowsEl.innerHTML = grades.map(g => `
+                <tr>
+                    <td data-label="Code">${g.subjectCode}</td>
+                    <td data-label="Subject">${g.subjectName}</td>
+                    <td data-label="Grade"><span class="gs-grade">${g.grade}</span></td>
+                    <td data-label="Remarks">${badge(g.remarks)}</td>
+                    <td data-label="Semester">${g.semester}</td>
+                    <td data-label="School Year">${g.schoolYear}</td>
+                </tr>`).join('');
+        } catch (e) {
+            rowsEl.innerHTML = '<tr><td class="gs-empty" colspan="6">&mdash;</td></tr>';
+            toast('Could not reach the server.', 'err');
+        }
+    }
+
+    loadMyGrades();
+</script>
+}

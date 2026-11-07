@@ -1,0 +1,239 @@
+@{
+    ViewData["Title"] = "Faculty Dashboard";
+}
+
+<div class="gs-header d-flex flex-wrap justify-content-between align-items-end gap-2">
+    <div>
+        <h1 class="gs-title">Faculty Dashboard</h1>
+        <p class="gs-subtitle">Create, update and remove student grade records.</p>
+    </div>
+</div>
+
+@* Summary tiles, recomputed from the live data *@
+<div class="gs-stats mb-4">
+    <div class="gs-stat">
+        <div class="gs-stat-label">Total records</div>
+        <div class="gs-stat-value" id="statTotal">0</div>
+    </div>
+    <div class="gs-stat">
+        <div class="gs-stat-label">Passed (&ge;75)</div>
+        <div class="gs-stat-value" id="statPass" style="color:#166534">0</div>
+    </div>
+    <div class="gs-stat">
+        <div class="gs-stat-label">Failed (&lt;75)</div>
+        <div class="gs-stat-value" id="statFail" style="color:#991b1b">0</div>
+    </div>
+</div>
+
+@* Add / Edit form. No Remarks field: the server computes it. *@
+<div class="gs-card mb-4">
+    <div class="gs-card-head" id="formTitle">Add a grade</div>
+    <div class="gs-card-body">
+        <form id="gradeForm">
+            <input type="hidden" id="gradeId" />
+            <div class="row g-3">
+                <div class="col-sm-6 col-lg-2 gs-field">
+                    <label for="studentId">Student ID</label>
+                    <input type="number" id="studentId" class="form-control" inputmode="numeric" min="1" required aria-describedby="studentIdHelp" />
+                    <span class="hint" id="studentIdHelp">1 = Juan, 2 = Maria, 3 = Pedro</span>
+                </div>
+                <div class="col-sm-6 col-lg-2 gs-field">
+                    <label for="subjectCode">Subject Code</label>
+                    <input type="text" id="subjectCode" class="form-control" autocapitalize="characters" autocorrect="off" required />
+                </div>
+                <div class="col-sm-6 col-lg-3 gs-field">
+                    <label for="subjectName">Subject Name</label>
+                    <input type="text" id="subjectName" class="form-control" required />
+                </div>
+                <div class="col-sm-6 col-lg-1 gs-field">
+                    <label for="grade">Grade</label>
+                    <input type="number" id="grade" class="form-control" inputmode="numeric" min="0" max="100" required aria-describedby="gradeHelp" />
+                    <span class="hint" id="gradeHelp">0&ndash;100</span>
+                </div>
+                <div class="col-sm-6 col-lg-2 gs-field">
+                    <label for="semester">Semester</label>
+                    <input type="text" id="semester" class="form-control" value="1st Semester" required />
+                </div>
+                <div class="col-sm-6 col-lg-2 gs-field">
+                    <label for="schoolYear">School Year</label>
+                    <input type="text" id="schoolYear" class="form-control" value="2026-2027" required />
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button type="submit" id="submitBtn" class="btn btn-primary">Add grade</button>
+                <button type="button" id="cancelBtn" class="btn btn-outline-secondary d-none">Cancel edit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<h2 class="gs-title" style="font-size:1.15rem; margin-bottom:.6rem;">Grade records</h2>
+<div class="gs-table-wrap" tabindex="0" role="region" aria-label="Grade records">
+    <table class="gs-table">
+        <thead>
+            <tr>
+                <th>Student No.</th><th>Name</th><th>Code</th><th>Subject</th>
+                <th>Grade</th><th>Remarks</th><th>Semester</th><th>School Year</th><th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="gradeRows">
+            <tr><td class="gs-empty" colspan="9">Loading&hellip;</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@* Accessible toast region: announced to screen readers, auto-dismissed *@
+<div class="gs-toast-stack" id="toasts" role="status" aria-live="polite"></div>
+
+@section Scripts {
+<script>
+    const API = '/api/grades';
+    const rowsEl = document.getElementById('gradeRows');
+    const form = document.getElementById('gradeForm');
+    const toasts = document.getElementById('toasts');
+    let grades = [];
+    let editingId = null;
+
+    // Map a remark code to its badge colour class
+    function badgeClass(r) {
+        return ({ 'CMS':'cms','SP':'sp','SAP':'sap','GP':'gp','EP':'ep','BEP/FAILED':'fail' })[r] || 'sap';
+    }
+    function badge(r) { return `<span class="gs-badge ${badgeClass(r)}">${r}</span>`; }
+
+    // Toast: a small auto-dismissing message, announced via aria-live
+    function toast(text, kind) {
+        const el = document.createElement('div');
+        el.className = 'gs-toast ' + (kind === 'err' ? 'err' : 'ok');
+        el.innerHTML = `<span>${text}</span><button class="gs-toast-close" aria-label="Dismiss">&times;</button>`;
+        el.querySelector('button').onclick = () => el.remove();
+        toasts.appendChild(el);
+        setTimeout(() => el.remove(), 3500);
+    }
+
+    // Turn any error response into a readable sentence (never crash on failure)
+    async function errorText(res) {
+        try {
+            const data = await res.json();
+            if (data.errors) return Object.values(data.errors).flat().join(' ');
+            if (data.message) return data.message;
+        } catch (e) { /* no JSON body */ }
+        if (res.status === 401) return 'You are not signed in.';
+        if (res.status === 403) return 'You are not allowed to do that.';
+        return 'Request failed (HTTP ' + res.status + ').';
+    }
+
+    function updateStats() {
+        document.getElementById('statTotal').textContent = grades.length;
+        document.getElementById('statPass').textContent = grades.filter(g => g.grade >= 75).length;
+        document.getElementById('statFail').textContent = grades.filter(g => g.grade < 75).length;
+    }
+
+    // READ
+    async function loadGrades() {
+        try {
+            const res = await fetch(API, { credentials: 'same-origin' });
+            if (!res.ok) { toast(await errorText(res), 'err'); return; }
+            grades = await res.json();
+            drawRows();
+            updateStats();
+        } catch (e) { toast('Could not reach the server.', 'err'); }
+    }
+
+    function drawRows() {
+        if (grades.length === 0) {
+            rowsEl.innerHTML = '<tr><td class="gs-empty" colspan="9">No grade records yet. Add one above.</td></tr>';
+            return;
+        }
+        // data-label attributes drive the mobile card layout (see site.css container query)
+        rowsEl.innerHTML = grades.map(g => `
+            <tr>
+                <td data-label="Student No.">${g.studentNumber}</td>
+                <td data-label="Name">${g.studentName}</td>
+                <td data-label="Code">${g.subjectCode}</td>
+                <td data-label="Subject">${g.subjectName}</td>
+                <td data-label="Grade"><span class="gs-grade">${g.grade}</span></td>
+                <td data-label="Remarks">${badge(g.remarks)}</td>
+                <td data-label="Semester">${g.semester}</td>
+                <td data-label="School Year">${g.schoolYear}</td>
+                <td data-label="Actions" class="text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" data-edit="${g.gradeId}">Edit</button>
+                    <button class="btn btn-sm btn-outline-danger" data-delete="${g.gradeId}">Delete</button>
+                </td>
+            </tr>`).join('');
+    }
+
+    function formBody() {
+        return {
+            studentId: Number(document.getElementById('studentId').value),
+            subjectCode: document.getElementById('subjectCode').value,
+            subjectName: document.getElementById('subjectName').value,
+            grade: Number(document.getElementById('grade').value),
+            semester: document.getElementById('semester').value,
+            schoolYear: document.getElementById('schoolYear').value
+        };
+    }
+
+    // CREATE (POST) or UPDATE (PUT)
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = editingId ? `${API}/${editingId}` : API;
+        const method = editingId ? 'PUT' : 'POST';
+        try {
+            const res = await fetch(url, {
+                method, credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formBody())
+            });
+            if (!res.ok) { toast(await errorText(res), 'err'); return; }
+            toast(editingId ? 'Grade updated.' : 'Grade added.', 'ok');
+            resetForm();
+            loadGrades();
+        } catch (e) { toast('Could not reach the server.', 'err'); }
+    });
+
+    // Edit -> fill form; Delete -> confirm() then DELETE
+    rowsEl.addEventListener('click', async (e) => {
+        const editId = e.target.getAttribute('data-edit');
+        const delId = e.target.getAttribute('data-delete');
+        if (editId) {
+            const g = grades.find(x => x.gradeId == editId);
+            document.getElementById('gradeId').value = g.gradeId;
+            document.getElementById('studentId').value = g.studentId;
+            document.getElementById('subjectCode').value = g.subjectCode;
+            document.getElementById('subjectName').value = g.subjectName;
+            document.getElementById('grade').value = g.grade;
+            document.getElementById('semester').value = g.semester;
+            document.getElementById('schoolYear').value = g.schoolYear;
+            editingId = g.gradeId;
+            document.getElementById('formTitle').textContent = 'Edit grade #' + g.gradeId;
+            document.getElementById('submitBtn').textContent = 'Update grade';
+            document.getElementById('cancelBtn').classList.remove('d-none');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        if (delId) {
+            if (!confirm('Delete this grade record? This cannot be undone.')) return;
+            try {
+                const res = await fetch(`${API}/${delId}`, { method: 'DELETE', credentials: 'same-origin' });
+                if (!res.ok) { toast(await errorText(res), 'err'); return; }
+                toast('Grade deleted.', 'ok');
+                loadGrades();
+            } catch (e) { toast('Could not reach the server.', 'err'); }
+        }
+    });
+
+    document.getElementById('cancelBtn').addEventListener('click', resetForm);
+
+    function resetForm() {
+        editingId = null;
+        form.reset();
+        document.getElementById('gradeId').value = '';
+        document.getElementById('semester').value = '1st Semester';
+        document.getElementById('schoolYear').value = '2026-2027';
+        document.getElementById('formTitle').textContent = 'Add a grade';
+        document.getElementById('submitBtn').textContent = 'Add grade';
+        document.getElementById('cancelBtn').classList.add('d-none');
+    }
+
+    loadGrades();
+</script>
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - GradingSystem</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/GradingSystem.styles.css" asp-append-version="true" />
+</head>
+<body>
+    <header class="gs-navbar">
+        <div class="container d-flex align-items-center justify-content-between py-2">
+            <a class="gs-brand" asp-controller="Home" asp-action="Index">
+                <span class="gs-logo" aria-hidden="true">GS</span>
+                <span>GradingSystem</span>
+            </a>
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                var name = User.Identity!.Name ?? "";
+                var initials = name.Length > 0 ? name.Substring(0, 1).ToUpper() : "?";
+                <div class="d-flex align-items-center gap-2">
+                    <span class="gs-userchip">
+                        <span class="gs-avatar" aria-hidden="true">@initials</span>
+                        <span class="d-none d-sm-inline">@name</span>
+                    </span>
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
+                        <button class="btn btn-outline-secondary btn-sm">Sign out</button>
+                    </form>
+                </div>
+            }
+            else
+            {
+                <a class="btn btn-primary btn-sm" asp-controller="Account" asp-action="Login">Sign in</a>
+            }
+        </div>
+    </header>
+
+    <div class="container">
+        <main role="main" class="pb-3">
+            @RenderBody()
+        </main>
+    </div>
+
+    <footer class="border-top footer text-muted">
+        <div class="container py-3">
+            &copy; 2026 - GradingSystem
+        </div>
+    </footer>
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
